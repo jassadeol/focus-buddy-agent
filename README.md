@@ -1,93 +1,175 @@
-# Focus Buddy – Concierge Agent for 25-Minute Deep Work Sessions
+# Focus Buddy – AI Concierge Agent for 25-Minute Focus Sessions
 
-A multi-agent concierge system that transforms messy to-do lists into realistic 25-minute focus plans, reducing decision fatigue and context switching for knowledge workers.
+A multi-agent system powered by Google Gemini that transforms messy to-do lists into realistic 25-minute deep work plans.
 
 **Track:** Concierge Agents  
-**Concepts Used:** Multi-agent systems, tool calling, session memory
+**AI Model:** Google Gemini 2.0 Flash (Free Tier)  
+**Concepts:** Multi-agent systems, Function calling, Session memory
+---
+
+##  Problem Statement
+
+Knowledge workers face decision fatigue when choosing what to work on in short time windows. A long to-do list combined with limited time leads to:
+
+- **Analysis paralysis** - spending 10 minutes deciding what to do in the next 20
+- **Poor prioritization** - choosing easy tasks over important ones
+- **Unrealistic planning** - cramming too much into too little time
+- **Context switching** - starting multiple things and finishing nothing
+
+Traditional to-do apps store tasks but don't help users make smart, time-bounded decisions about what to do *right now*.
 
 ---
 
-## Problem Statement
+##  Solution
 
-Knowledge workers and students face a common challenge: they have long, messy to-do lists but struggle to decide what to tackle in the next 25-30 minutes. This decision fatigue leads to:
-- Paralysis and procrastination
-- Poor task selection (choosing easy over important)
-- Context switching that kills deep work
-- Unrealistic planning that leads to incomplete work and frustration
+**Focus Buddy** is an AI concierge agent that acts as your personal productivity coach. It:
 
-Traditional to-do apps don't solve this—they store tasks but don't help users make smart, time-bounded decisions about what to do *right now*.
+1. **Understands messy input** - paste your tasks in any format
+2. **Prioritizes intelligently** - considers urgency, impact, and your energy level
+3. **Creates realistic plans** - schedules work that actually fits in 25 minutes
+4. **Tracks progress** - checks in after sessions and learns from outcomes
 
 ---
 
-## Solution & Architecture
-
-**Focus Buddy** is a concierge AI agent that acts as your personal workflow assistant. It takes your messy task list and generates a realistic 25-minute deep work plan, then coaches you through execution.
+##  Architecture
 
 ### Multi-Agent System
 
-The system uses **two cooperating agent roles**:
+The system uses **two cooperating agent roles** orchestrated by a single Gemini model:
 
-1. **Planner Agent**
-   - Parses unstructured task input
-   - Prioritizes by urgency, impact, and time estimates
-   - Creates time-bounded schedules that actually fit in 25 minutes
+** Planner Agent**
+- Parses unstructured task input into structured data
+- Calculates priority scores based on urgency, impact, and time
+- Generates time-bounded schedules with realistic task limits
 
-2. **Coach Agent**
-   - Presents the plan in friendly, actionable format
-   - Confirms the plan fits user energy and context
-   - Checks in after the session to track completion and suggest improvements
+** Coach Agent**  
+- Presents plans in actionable, motivating format
+- Confirms plans fit user context and energy
+- Conducts post-session check-ins and tracks completion
 
-### Tools (Function Calling)
+### Function Calling (Tools)
 
-Three Python tools enable structured workflow:
+Three Python functions enable structured workflow:
 
-- `parse_tasks(raw_text)` – Converts messy input into structured Task objects
-- `prioritize_tasks(tasks)` – Sorts by urgency/importance and realistic time
-- `create_focus_schedule(tasks, minutes)` – Builds a timeline that fits available time
+| Function | Input | Output | Purpose |
+|----------|-------|--------|---------|
+| `parse_tasks()` | Raw text | Task objects | Convert messy lists into structured data |
+| `prioritize_tasks()` | Task list | Sorted tasks | Score and rank by urgency/importance |
+| `create_focus_schedule()` | Tasks + time | Schedule blocks | Build timeline that fits available time |
 
 ### Session Memory
 
-The agent maintains short-term memory across a focus session:
+The agent maintains state across a focus session:
 - Original task list
-- Prioritized tasks
+- Prioritized task queue  
 - Current focus plan
-- Completion status after check-in
+- Completion status
+- User energy level and preferences
 
-This enables continuity: "What got done?" → "Let's plan the next 25 minutes with what's left."
-
----
-
-## Course Concepts Applied
-
-1. **Multi-agent systems:** Planner and Coach roles coordinate through shared context
-2. **Tool use:** Three custom Python functions for parsing, prioritizing, and scheduling
-3. **Sessions & memory:** Persistent state tracks plans and outcomes within a work session
-4. **Evaluation loop:** Check-in phase evaluates what worked and adjusts future plans
+This enables:
+- Continuity between planning and check-in
+- Learning from what gets completed vs. what doesn't
+- Suggesting improvements for the next session
 
 ---
 
-## Setup & Installation
+## 🎓 Course Concepts Demonstrated
 
-### Requirements
+### 1. Multi-Agent Systems
+- Single LLM playing coordinated roles (Planner + Coach)
+- Shared context and memory between roles
+- Clear separation of concerns (analysis vs. interaction)
+
+### 2. Function Calling / Tool Use
+- Three custom Python tools with structured schemas
+- Deterministic logic wrapped by AI orchestration
+- Tool chaining (parse → prioritize → schedule)
+
+### 3. Session Memory & State Management
+- Persistent storage of focus plans across turns
+- Tracking task completion between sessions
+- Context retention for multi-sprint workflows
+
+### 4. Evaluation Loop
+- Post-session analysis of what worked
+- Feedback-driven plan adjustments
+- Continuous improvement of time estimates
+
+---
+
+## 🚀 Setup & Installation
+
+### Prerequisites
+- Python 3.10+
+- Google Gemini API key (free tier available)
+
+### Step 1: Get Your Free API Key
+
+1. Go to https://aistudio.google.com/app/apikey
+2. Click "Create API Key"
+3. Copy the key (format: `AIzaSy...`)
+
+### Step 2: Install Dependencies
 ```bash
+# Clone the repository
+git clone https://github.com/YOUR_USERNAME/focus-buddy-agent.git
+cd focus-buddy-agent
+
+# Create virtual environment (recommended)
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+
+# Install packages
 pip install -r requirements.txt
 ```
 
-You'll need:
-- Python 3.10+
-- Anthropic Claude API key (set as `ANTHROPIC_API_KEY` environment variable)
-- Anthropic Agent Development Kit (ADK)
-
-### Running the Agent
-
-**Option 1: Jupyter Notebook**
+### Step 3: Configure API Key
 ```bash
-jupyter notebook src/main.ipynb
+# Copy example environment file
+cp .env.example .env
+
+# Edit .env and add your key
+echo "GEMINI_API_KEY=your_key_here" > .env
 ```
 
-**Option 2: Python Script**
+---
+
+## Testing
+
+### Test 1: Verify Tools Work
 ```bash
-python src/main.py
+python tests/test_tools.py
+```
+
+**Expected output:**
+```
+Test 1: Parsing tasks...
+✓ Parsed 4 tasks
+  - Review 3 pull requests (10 min)
+  - Fix authentication bug (15 min)
+  - Write API documentation (10 min)
+  - Reply to Sarah about Q4 planning (10 min)
+
+Test 2: Prioritizing...
+✓ Top priority: Fix authentication bug (score: 3.65)
+
+Test 3: Creating schedule...
+✓ Created 4 time blocks:
+  0-15 min: Fix authentication bug
+  15-25 min: Review 3 pull requests
+  25-28 min: Wrap up & notes for next session
+  
+All tools working!
+```
+
+### Test 2: Run Full Agent
+```bash
+python tests/test_agent.py
+```
+
+### Test 3: Interactive Session
+```bash
+python src/gemini_agent.py
 ```
 
 ---
@@ -96,61 +178,80 @@ python src/main.py
 
 ### Input
 ```
-User: I have so much to do. Here's my list:
-- Review pull requests (3 open)
-- Write docs for the new API endpoint
-- Reply to Sarah about the Q4 planning meeting
-- Fix bug in authentication flow
-- Prep slides for Friday's demo
+User: I have 25 minutes before my next meeting and I'm pretty tired. 
+Here's what I need to do:
 
-I have 25 minutes right now and I'm pretty tired.
+- Review 3 open pull requests
+- Fix the authentication bug (it's blocking QA)
+- Write API documentation for the /users endpoint  
+- Reply to Sarah about Q4 planning meeting
+- Prep slides for Friday's demo (need about 10 slides)
 ```
 
-### Agent Response
-**Summary:** We'll tackle the authentication bug and one quick PR review—both unblock others and are doable when tired.
+### Output
+
+**Summary:** We'll fix the auth bug and review one PR—both unblock your team and are manageable when tired.
 
 **Timeline:**
-- 0-3 min: Skim the 3 PRs and pick the simplest one
-- 3-18 min: Deep focus on authentication bug (aim for root cause + fix)
-- 18-23 min: Review the simple PR and approve/comment
-- 23-25 min: Write 2-sentence note on what's left for the bug
+- 0-15 min: Deep focus on authentication bug (find root cause + implement fix)
+- 15-22 min: Review the simplest PR from the 3 open
+- 22-25 min: Write quick handoff note on bug status
 
 **Checklist:**
-- [ ] Pick 1 PR to review
-- [ ] Fix or document auth bug
-- [ ] Complete PR review
-- [ ] Quick handoff note
+- ☐ Fix authentication bug or document blocker
+- ☐ Review and approve/comment on 1 PR
+- ☐ Leave 2-sentence handoff note
 
-**Check-in:** Come back in 25 minutes and tell me what you finished!
+**Check-in:** Come back in 25 minutes and let me know what you got done! 🚀
 
 ---
 
-## How It Works
+## Architecture Diagrams
 
-1. **User provides tasks** (messy format is fine)
-2. **Planner agent** calls `parse_tasks` → `prioritize_tasks` → `create_focus_schedule`
-3. **Coach agent** presents the plan and gets user confirmation
-4. **User executes** the 25-minute sprint
-5. **Check-in** marks tasks complete and suggests next steps
-
-The agent avoids over-planning (no more than 3-5 tasks per block) and respects user energy level (tired = smaller tasks, high energy = deep work).
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed visual diagrams including:
+- System mindmap
+- Agent workflow flowchart
+- Technical architecture
+- Tool execution sequence
 
 ---
 
 ## Value Proposition
 
-- **Reduces cognitive load:** No more staring at a list wondering what to do
-- **Realistic planning:** Fits actual available time instead of wishful thinking
-- **Momentum:** Small wins in 25 minutes beat perfect plans that never start
-- **Repeatable:** Works for Pomodoro cycles, short windows between meetings, or deep work sessions
+### For Individual Contributors
+- **Less overwhelm:** Clear guidance on what to do next
+- **Better decisions:** Data-driven prioritization vs. gut feel
+- **More momentum:** Completing small wins beats perfect plans that never start
+- **Realistic expectations:** Plans that fit actual available time
 
-Ideal for students, developers, writers, and anyone who struggles with task paralysis.
+### For Teams
+- **Reduced context switching:** Focused sprints instead of task-hopping
+- **Better time estimates:** Learn what actually takes 25 minutes
+- **Unblocking others:** Prioritizes tasks that enable teammates
+- **Repeatable process:** Works for Pomodoro cycles, meeting gaps, or deep work blocks
+
+### Ideal For
+- Software developers juggling tickets, reviews, and documentation
+- Students balancing assignments, reading, and projects
+- Writers managing research, drafting, and editing
+- Anyone who struggles with "what should I work on right now?"
 
 ---
 
 ## Future Enhancements
 
-- Calendar integration to auto-detect available time blocks
-- Learning from past sessions to improve time estimates
-- Slack/Teams integration for team-based focus sessions
-- Voice interface for hands-free check-ins
+- **Calendar integration:** Auto-detect available time blocks from Google Calendar
+- **Learning system:** Improve time estimates based on historical completion data
+- **Team mode:** Coordinate focus sessions across team members
+- **Slack/Discord bot:** Check in without leaving your workflow
+- **Voice interface:** Hands-free planning and check-ins
+- **Pomodoro timer:** Built-in countdown with break suggestions
+
+
+---
+
+## Acknowledgments
+
+- Built for the [Google AI Agents Intensive](https://www.kaggle.com/competitions/agents-intensive-capstone-project)
+- Powered by [Google Gemini API](https://ai.google.dev/)
+- Inspired by Pomodoro Technique and Getting Things Done methodology

@@ -1,10 +1,9 @@
 """
 Focus Buddy Tools
-Simple Python functions for parsing, prioritizing, and scheduling tasks.
+Python functions for parsing, prioritizing, and scheduling tasks.
 """
 
 from typing import List, Optional
-from datetime import datetime
 from pydantic import BaseModel
 import re
 
@@ -29,8 +28,17 @@ def parse_tasks(raw_text: str) -> List[Task]:
     """
     Parse messy task input into structured Task objects.
     
-    Handles bullet points, numbers, and natural language.
-    Attempts to extract time estimates like "(15 min)" or "30m".
+    Handles:
+    - Bullet points (-, *, •)
+    - Numbered lists (1., 2., etc.)
+    - Time estimates like "(15 min)" or "30m"
+    - Deadline hints like "due today" or "by Friday"
+    
+    Args:
+        raw_text: Unstructured task list from user
+        
+    Returns:
+        List of Task objects with normalized structure
     """
     tasks = []
     
@@ -42,17 +50,22 @@ def parse_tasks(raw_text: str) -> List[Task]:
         if not line or len(line) < 3:
             continue
             
-        # Extract time estimates
+        # Extract time estimates: "(15 min)" or "30m"
         time_match = re.search(r'\((\d+)\s*min\)|\b(\d+)m\b', line, re.IGNORECASE)
         estimated_minutes = 10  # default
         
         if time_match:
             estimated_minutes = int(time_match.group(1) or time_match.group(2))
+            # Remove time indicator from title
             line = re.sub(r'\(?\d+\s*min?\)?', '', line, flags=re.IGNORECASE).strip()
         
         # Extract deadline hints
         deadline = None
-        deadline_match = re.search(r'\b(due|deadline|by)\s+([a-zA-Z]+\s+\d+|\d+/\d+|today|tomorrow)', line, re.IGNORECASE)
+        deadline_match = re.search(
+            r'\b(due|deadline|by)\s+([a-zA-Z]+\s+\d+|\d+/\d+|today|tomorrow)',
+            line,
+            re.IGNORECASE
+        )
         if deadline_match:
             deadline = deadline_match.group(2)
         
@@ -69,11 +82,18 @@ def prioritize_tasks(tasks: List[Task]) -> List[Task]:
     """
     Sort tasks by priority score combining urgency, impact, and time.
     
-    Priority rules:
-    1. Tasks with deadlines today/soon get +3 points
-    2. Quick tasks (< 10 min) get +2 points (quick wins)
-    3. Keywords like "urgent", "important", "blocking" get +2 points
-    4. Shorter tasks get slight boost (encourages momentum)
+    Priority scoring rules:
+    1. Deadlines today/urgent: +3 points
+    2. Deadlines tomorrow: +2 points
+    3. Quick tasks (≤10 min): +2 points (momentum from quick wins)
+    4. Keywords (urgent, important, blocking, bug, fix): +1.5-2 points
+    5. Shorter tasks get slight boost as tie-breaker
+    
+    Args:
+        tasks: List of Task objects to prioritize
+        
+    Returns:
+        Same tasks sorted by priority_score (descending)
     """
     for task in tasks:
         score = 0.0
@@ -86,18 +106,27 @@ def prioritize_tasks(tasks: List[Task]) -> List[Task]:
             elif 'tomorrow' in deadline_lower:
                 score += 2
         
-        # Quick win bonus
+        # Quick win bonus (encourages momentum)
         if task.estimated_minutes <= 10:
             score += 2
         
-        # Keyword scanning
+        # Keyword scanning for importance/urgency
         title_lower = task.title.lower()
-        if any(word in title_lower for word in ['urgent', 'important', 'blocking', 'asap', 'critical']):
+        
+        # High priority keywords
+        if any(word in title_lower for word in [
+            'urgent', 'important', 'blocking', 'asap', 'critical', 'emergency'
+        ]):
             score += 2
-        if any(word in title_lower for word in ['bug', 'fix', 'broken', 'error']):
+        
+        # Technical urgency keywords
+        if any(word in title_lower for word in [
+            'bug', 'fix', 'broken', 'error', 'crash', 'down'
+        ]):
             score += 1.5
         
         # Time-based tie-breaker (shorter = slightly higher)
+        # Prevents score ties, encourages finishing things
         score += (60 - min(task.estimated_minutes, 60)) / 100
         
         task.priority_score = score
@@ -106,7 +135,10 @@ def prioritize_tasks(tasks: List[Task]) -> List[Task]:
     return sorted(tasks, key=lambda t: t.priority_score, reverse=True)
 
 
-def create_focus_schedule(tasks: List[Task], available_minutes: int = 25) -> List[ScheduledBlock]:
+def create_focus_schedule(
+    tasks: List[Task],
+    available_minutes: int = 25
+) -> List[ScheduledBlock]:
     """
     Build a realistic schedule that fits in available_minutes.
     
@@ -114,6 +146,14 @@ def create_focus_schedule(tasks: List[Task], available_minutes: int = 25) -> Lis
     - Never schedule more time than available
     - Limit to 2-5 blocks max (avoid context switching)
     - Leave 2-5 min buffer at the end for wrap-up
+    - If a task doesn't fit, try to fit a partial time slice
+    
+    Args:
+        tasks: Prioritized list of tasks
+        available_minutes: Total time window (default 25 for Pomodoro)
+        
+    Returns:
+        List of ScheduledBlock objects with start/end times
     """
     schedule = []
     current_minute = 0
@@ -121,8 +161,9 @@ def create_focus_schedule(tasks: List[Task], available_minutes: int = 25) -> Lis
     usable_minutes = available_minutes - buffer_minutes
     
     for task in tasks:
+        # Check if task fits
         if current_minute + task.estimated_minutes > usable_minutes:
-            # Try to fit a smaller slice if it's the last task
+            # Try to fit a partial slice if it's meaningful (≥5 min)
             remaining = usable_minutes - current_minute
             if remaining >= 5:
                 schedule.append(ScheduledBlock(
@@ -133,6 +174,7 @@ def create_focus_schedule(tasks: List[Task], available_minutes: int = 25) -> Lis
                 current_minute += remaining
             break
         
+        # Task fits completely
         schedule.append(ScheduledBlock(
             start_minute=current_minute,
             end_minute=current_minute + task.estimated_minutes,
@@ -140,7 +182,7 @@ def create_focus_schedule(tasks: List[Task], available_minutes: int = 25) -> Lis
         ))
         current_minute += task.estimated_minutes
         
-        # Limit to 4 main blocks
+        # Limit to 4 main blocks (avoid context switching)
         if len(schedule) >= 4:
             break
     
