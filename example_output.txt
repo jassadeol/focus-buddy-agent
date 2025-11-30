@@ -1,0 +1,30 @@
+FOCUS BUDDY - Example Output
+============================================================
+
+Input Tasks:
+
+    - Review pull requests (20 min)
+    - Write unit tests for auth module
+    - Update documentation due: today
+    - Reply to 3 urgent emails (15 min)
+    - Plan sprint retrospective
+    
+
+============================================================
+Agent Response:
+============================================================
+Here's a plan to make the most of your next 30 minutes:
+
+**Summary:** Focus on documentation, unit tests, and sprint planning.
+
+**Timeline:**
+- 0-10 min: Update documentation
+- 10-20 min: Write unit tests for auth module
+- 20-30 min: Plan sprint retrospective
+
+**Checklist:**
+- ☐ Update documentation
+- ☐ Write unit tests for auth module
+- ☐ Plan sprint retrospective
+
+**Check-in:** Let me know how it went when you're done!

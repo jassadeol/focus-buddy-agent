@@ -1,197 +1,366 @@
 """
-Focus Buddy Tools
-Python functions for parsing, prioritizing, and scheduling tasks.
-"""
+Focus Buddy Agent Tools
+Simple Python functions that the agent can call to parse, prioritize, and schedule tasks.
 
+IMPORTANT: This file should NOT import from gemini_agent.py to avoid circular imports.
+"""
+'''
+
+from dataclasses import dataclass
 from typing import List, Optional
-from pydantic import BaseModel
+from datetime import datetime
 import re
 
 
-class Task(BaseModel):
+@dataclass
+class Task:
     """Structured task representation"""
     title: str
     estimated_minutes: int = 10
     deadline: Optional[str] = None
     priority_score: float = 0.0
-    completed: bool = False
 
 
-class ScheduledBlock(BaseModel):
+@dataclass
+class ScheduledBlock:
     """A time block in the focus schedule"""
     start_minute: int
     end_minute: int
     task_title: str
 
 
-def parse_tasks(raw_text: str) -> List[Task]:
+def parse_tasks(raw_text: str) -> List[dict]:
     """
-    Parse messy task input into structured Task objects.
-    
-    Handles:
-    - Bullet points (-, *, •)
-    - Numbered lists (1., 2., etc.)
-    - Time estimates like "(15 min)" or "30m"
-    - Deadline hints like "due today" or "by Friday"
+    Parse messy user text into structured tasks.
     
     Args:
-        raw_text: Unstructured task list from user
-        
+        raw_text: Raw task list from user (bullets, paragraphs, etc.)
+    
     Returns:
-        List of Task objects with normalized structure
+        List of task dictionaries with title, estimated_minutes, and optional deadline
     """
     tasks = []
     
     # Split by common delimiters
-    lines = re.split(r'[\n\r]+|(?:^|\s)[-•*]\s+|\d+\.\s+', raw_text)
+    lines = re.split(r'[\n•\-*]', raw_text)
     
     for line in lines:
         line = line.strip()
         if not line or len(line) < 3:
             continue
-            
-        # Extract time estimates: "(15 min)" or "30m"
-        time_match = re.search(r'\((\d+)\s*min\)|\b(\d+)m\b', line, re.IGNORECASE)
+        
+        # Extract time estimates (e.g., "30min", "1h", "2 hours")
+        time_match = re.search(r'(\d+)\s*(min|mins|minute|minutes|h|hr|hrs|hour|hours)', line, re.IGNORECASE)
         estimated_minutes = 10  # default
         
         if time_match:
-            estimated_minutes = int(time_match.group(1) or time_match.group(2))
-            # Remove time indicator from title
-            line = re.sub(r'\(?\d+\s*min?\)?', '', line, flags=re.IGNORECASE).strip()
+            value = int(time_match.group(1))
+            unit = time_match.group(2).lower()
+            if unit.startswith('h'):
+                estimated_minutes = value * 60
+            else:
+                estimated_minutes = value
+            # Remove time estimate from title
+            line = re.sub(r'\d+\s*(min|mins|minute|minutes|h|hr|hrs|hour|hours)', '', line, flags=re.IGNORECASE).strip()
         
-        # Extract deadline hints
+        # Extract deadline (e.g., "due Monday", "deadline: tomorrow")
         deadline = None
-        deadline_match = re.search(
-            r'\b(due|deadline|by)\s+([a-zA-Z]+\s+\d+|\d+/\d+|today|tomorrow)',
-            line,
-            re.IGNORECASE
-        )
+        deadline_match = re.search(r'(due|deadline|by)\s*:?\s*(\w+)', line, re.IGNORECASE)
         if deadline_match:
             deadline = deadline_match.group(2)
+            line = re.sub(r'(due|deadline|by)\s*:?\s*\w+', '', line, flags=re.IGNORECASE).strip()
         
-        tasks.append(Task(
-            title=line,
-            estimated_minutes=estimated_minutes,
-            deadline=deadline
-        ))
+        # Clean up remaining punctuation
+        line = re.sub(r'^[\-\*•:]+\s*', '', line).strip()
+        line = re.sub(r'\s+', ' ', line)
+        
+        if line:
+            tasks.append({
+                "title": line,
+                "estimated_minutes": estimated_minutes,
+                "deadline": deadline
+            })
     
     return tasks
 
 
-def prioritize_tasks(tasks: List[Task]) -> List[Task]:
+def prioritize_tasks(tasks: List[dict]) -> List[dict]:
     """
-    Sort tasks by priority score combining urgency, impact, and time.
-    
-    Priority scoring rules:
-    1. Deadlines today/urgent: +3 points
-    2. Deadlines tomorrow: +2 points
-    3. Quick tasks (≤10 min): +2 points (momentum from quick wins)
-    4. Keywords (urgent, important, blocking, bug, fix): +1.5-2 points
-    5. Shorter tasks get slight boost as tie-breaker
+    Sort tasks by urgency, importance, and estimated time.
     
     Args:
-        tasks: List of Task objects to prioritize
-        
+        tasks: List of task dictionaries
+    
     Returns:
-        Same tasks sorted by priority_score (descending)
+        Sorted list of tasks with priority_score added
     """
-    for task in tasks:
+    def calculate_priority(task: dict) -> float:
         score = 0.0
         
-        # Deadline urgency
-        if task.deadline:
-            deadline_lower = task.deadline.lower()
-            if 'today' in deadline_lower or 'urgent' in deadline_lower:
-                score += 3
-            elif 'tomorrow' in deadline_lower:
-                score += 2
+        # Has deadline = higher priority
+        if task.get("deadline"):
+            score += 10.0
+            # Urgent keywords
+            deadline_lower = task["deadline"].lower()
+            if deadline_lower in ["today", "asap", "urgent", "now"]:
+                score += 20.0
+            elif deadline_lower in ["tomorrow", "soon"]:
+                score += 10.0
         
-        # Quick win bonus (encourages momentum)
-        if task.estimated_minutes <= 10:
-            score += 2
+        # Shorter tasks get slight boost (quick wins)
+        est_mins = task.get("estimated_minutes", 10)
+        if est_mins <= 5:
+            score += 5.0
+        elif est_mins <= 15:
+            score += 2.0
         
-        # Keyword scanning for importance/urgency
-        title_lower = task.title.lower()
+        # Important keywords in title
+        title_lower = task["title"].lower()
+        if any(word in title_lower for word in ["urgent", "important", "critical", "asap", "priority"]):
+            score += 15.0
+        if any(word in title_lower for word in ["review", "check", "quick", "simple"]):
+            score += 3.0
         
-        # High priority keywords
-        if any(word in title_lower for word in [
-            'urgent', 'important', 'blocking', 'asap', 'critical', 'emergency'
-        ]):
-            score += 2
-        
-        # Technical urgency keywords
-        if any(word in title_lower for word in [
-            'bug', 'fix', 'broken', 'error', 'crash', 'down'
-        ]):
-            score += 1.5
-        
-        # Time-based tie-breaker (shorter = slightly higher)
-        # Prevents score ties, encourages finishing things
-        score += (60 - min(task.estimated_minutes, 60)) / 100
-        
-        task.priority_score = score
+        return score
     
-    # Sort descending by priority
-    return sorted(tasks, key=lambda t: t.priority_score, reverse=True)
+    # Calculate priority scores
+    for task in tasks:
+        task["priority_score"] = calculate_priority(task)
+    
+    # Sort by priority (highest first), then by estimated time (shortest first)
+    sorted_tasks = sorted(
+        tasks,
+        key=lambda t: (-t["priority_score"], t.get("estimated_minutes", 10))
+    )
+    
+    return sorted_tasks
 
 
-def create_focus_schedule(
-    tasks: List[Task],
-    available_minutes: int = 25
-) -> List[ScheduledBlock]:
+def create_focus_schedule(tasks: List[dict], available_minutes: int) -> List[dict]:
     """
-    Build a realistic schedule that fits in available_minutes.
-    
-    Rules:
-    - Never schedule more time than available
-    - Limit to 2-5 blocks max (avoid context switching)
-    - Leave 2-5 min buffer at the end for wrap-up
-    - If a task doesn't fit, try to fit a partial time slice
+    Create a realistic schedule that fits within available time.
     
     Args:
-        tasks: Prioritized list of tasks
-        available_minutes: Total time window (default 25 for Pomodoro)
-        
+        tasks: Prioritized list of task dictionaries
+        available_minutes: Total minutes available (e.g., 25)
+    
     Returns:
-        List of ScheduledBlock objects with start/end times
+        List of scheduled block dictionaries with start_minute, end_minute, task_title
     """
     schedule = []
     current_minute = 0
-    buffer_minutes = 3
+    
+    # Reserve last 2-3 minutes for wrap-up
+    buffer_minutes = min(3, available_minutes // 10)
     usable_minutes = available_minutes - buffer_minutes
     
     for task in tasks:
-        # Check if task fits
-        if current_minute + task.estimated_minutes > usable_minutes:
-            # Try to fit a partial slice if it's meaningful (≥5 min)
-            remaining = usable_minutes - current_minute
-            if remaining >= 5:
-                schedule.append(ScheduledBlock(
-                    start_minute=current_minute,
-                    end_minute=current_minute + remaining,
-                    task_title=f"{task.title} (partial - {remaining} min)"
-                ))
-                current_minute += remaining
+        est_mins = task.get("estimated_minutes", 10)
+        
+        # Stop if we can't fit this task
+        if current_minute + est_mins > usable_minutes:
             break
         
-        # Task fits completely
-        schedule.append(ScheduledBlock(
-            start_minute=current_minute,
-            end_minute=current_minute + task.estimated_minutes,
-            task_title=task.title
-        ))
-        current_minute += task.estimated_minutes
+        schedule.append({
+            "start_minute": current_minute,
+            "end_minute": current_minute + est_mins,
+            "task_title": task["title"]
+        })
         
-        # Limit to 4 main blocks (avoid context switching)
-        if len(schedule) >= 4:
+        current_minute += est_mins
+        
+        # Limit to 5 tasks max to avoid overwhelm
+        if len(schedule) >= 5:
             break
     
     # Add wrap-up block if there's time
     if current_minute < available_minutes:
-        schedule.append(ScheduledBlock(
-            start_minute=current_minute,
-            end_minute=available_minutes,
-            task_title="Wrap up & notes for next session"
-        ))
+        schedule.append({
+            "start_minute": current_minute,
+            "end_minute": available_minutes,
+            "task_title": "Wrap up & notes for next session"
+        })
+    
+    return schedule
+
+
+# Tool definitions for Gemini API
+TOOL_DEFINITIONS = {
+    "function_declarations": [
+        {
+            "name": "parse_tasks",
+            "description": "Parse messy task text into structured format with titles, time estimates, and deadlines",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "raw_text": {
+                        "type": "string",
+                        "description": "The raw task list text from the user"
+                    }
+                },
+                "required": ["raw_text"]
+            }
+        },
+        {
+            "name": "prioritize_tasks",
+            "description": "Sort tasks by urgency, importance, and estimated time, calculating priority scores",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tasks": {
+                        "type": "array",
+                        "description": "List of parsed task objects",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "title": {
+                                    "type": "string",
+                                    "description": "Task title"
+                                },
+                                "estimated_minutes": {
+                                    "type": "number",
+                                    "description": "Estimated minutes to complete"
+                                },
+                                "deadline": {
+                                    "type": "string",
+                                    "description": "Optional deadline"
+                                }
+                            },
+                            "required": ["title"]
+                        }
+                    }
+                },
+                "required": ["tasks"]
+            }
+        },
+        {
+            "name": "create_focus_schedule",
+            "description": "Create a realistic schedule of time blocks that fits within available time",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tasks": {
+                        "type": "array",
+                        "description": "Prioritized list of tasks to schedule",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "title": {
+                                    "type": "string",
+                                    "description": "Task title"
+                                },
+                                "estimated_minutes": {
+                                    "type": "number",
+                                    "description": "Estimated minutes to complete"
+                                },
+                                "deadline": {
+                                    "type": "string",
+                                    "description": "Optional deadline"
+                                },
+                                "priority_score": {
+                                    "type": "number",
+                                    "description": "Calculated priority score"
+                                }
+                            },
+                            "required": ["title"]
+                        }
+                    },
+                    "available_minutes": {
+                        "type": "number",
+                        "description": "Total minutes available for the focus session"
+                    }
+                },
+                "required": ["tasks", "available_minutes"]
+            }
+        }
+    ]
+}
+
+
+# Tool execution mapping
+TOOL_FUNCTIONS = {
+    "parse_tasks": parse_tasks,
+    "prioritize_tasks": prioritize_tasks,
+    "create_focus_schedule": create_focus_schedule
+}
+'''
+
+from dataclasses import dataclass
+from typing import List
+import re
+
+@dataclass
+class Task:
+    title: str
+    deadline: str = ""
+    estimated_minutes: int = 10
+
+@dataclass
+class ScheduledBlock:
+    start_minute: int
+    end_minute: int
+    task_title: str
+
+def parse_tasks(raw_text: str) -> List[Task]:
+    """Parse messy task text into structured Task objects."""
+    tasks = []
+    lines = [line.strip() for line in raw_text.split('\n') if line.strip()]
+    
+    for line in lines:
+        # Remove bullet points, dashes, numbers
+        clean_line = re.sub(r'^[-*•\d.)\]]+\s*', '', line)
+        
+        # Extract time estimates if present (e.g., "30min", "1hr")
+        time_match = re.search(r'(\d+)\s*(min|hour|hr)', clean_line, re.IGNORECASE)
+        estimated_minutes = 10  # default
+        if time_match:
+            num = int(time_match.group(1))
+            unit = time_match.group(2).lower()
+            estimated_minutes = num if 'min' in unit else num * 60
+            clean_line = re.sub(r'\d+\s*(min|hour|hr)', '', clean_line, flags=re.IGNORECASE)
+        
+        # Extract deadline if present
+        deadline_match = re.search(r'(due|deadline|by)\s*:?\s*(\S+)', clean_line, re.IGNORECASE)
+        deadline = deadline_match.group(2) if deadline_match else ""
+        if deadline_match:
+            clean_line = re.sub(r'(due|deadline|by)\s*:?\s*\S+', '', clean_line, flags=re.IGNORECASE)
+        
+        clean_line = clean_line.strip(' ,-:')
+        if clean_line:
+            tasks.append(Task(title=clean_line, deadline=deadline, estimated_minutes=estimated_minutes))
+    
+    return tasks
+
+def prioritize_tasks(tasks: List[Task]) -> List[Task]:
+    """Sort tasks by urgency (deadline present) then by estimated time."""
+    def priority_key(task):
+        has_deadline = 1 if task.deadline else 0
+        return (-has_deadline, task.estimated_minutes)
+    
+    return sorted(tasks, key=priority_key)
+
+def create_focus_schedule(tasks: List[Task], available_minutes: int) -> List[ScheduledBlock]:
+    """Create a schedule that fits within available time."""
+    schedule = []
+    current_minute = 0
+    
+    for task in tasks:
+        if current_minute + task.estimated_minutes <= available_minutes:
+            schedule.append(ScheduledBlock(
+                start_minute=current_minute,
+                end_minute=current_minute + task.estimated_minutes,
+                task_title=task.title
+            ))
+            current_minute += task.estimated_minutes
+        else:
+            # Try to fit a partial chunk if there's time left
+            remaining = available_minutes - current_minute
+            if remaining >= 5:
+                schedule.append(ScheduledBlock(
+                    start_minute=current_minute,
+                    end_minute=available_minutes,
+                    task_title=f"{task.title} (partial)"
+                ))
+            break
     
     return schedule
